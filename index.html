@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Powered OMR Evaluation System</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Hind Siliguri', sans-serif; }
+
+        @media print {
+            body * { visibility: hidden !important; }
+            #printArea, #printArea * { visibility: visible !important; }
+            #printArea {
+                position: fixed !important;
+                top: 0 !important; left: 0 !important;
+                width: 100% !important;
+                padding: 20px !important;
+                background: #fff !important;
+            }
+        }
+        .opt-radio { display: none; }
+        .opt-label {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 32px; height: 32px; border-radius: 50%;
+            border: 2px solid #d1d5db; cursor: pointer;
+            font-size: 13px; font-weight: 600; color: #6b7280;
+            transition: all 0.15s;
+        }
+        .opt-radio:checked + .opt-label {
+            background: #2563eb; border-color: #2563eb; color: white;
+        }
+        .opt-label:hover { border-color: #2563eb; color: #2563eb; }
+        .scanning-anim { animation: pulse 1s ease-in-out infinite; }
+        @keyframes pulse { 0%,100%{opacity:0.5} 50%{opacity:1} }
+        .step-badge {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 28px; height: 28px; border-radius: 50%;
+            background: #2563eb; color: white; font-weight: 700; font-size: 13px;
+            margin-right: 8px; flex-shrink: 0;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+<div class="max-w-6xl mx-auto p-4 md:p-6">
+
+    <!-- Header -->
+    <header class="mb-6 p-5 bg-gradient-to-r from-blue-700 to-indigo-700 text-white rounded-xl shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h1 class="text-xl md:text-2xl font-bold">AI-Powered OMR মূল্যায়ন সিস্টেম</h1>
+                <p class="text-blue-200 text-xs mt-1">Gemini 2.5 Flash Vision দিয়ে স্বয়ংক্রিয় MCQ উত্তরপত্র মূল্যায়ন</p>
+            </div>
+            <div class="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                <label class="text-sm font-medium text-blue-100 whitespace-nowrap">Gemini API Key:</label>
+                <div class="flex gap-2 w-full sm:w-auto">
+                    <input type="password" id="apiKeyInput"
+                        placeholder="AIzaSy..."
+                        class="p-2 px-3 text-sm rounded-lg border-0 text-gray-800 w-full sm:w-60 font-mono focus:ring-2 focus:ring-blue-300 outline-none">
+                    <button onclick="toggleApiKey()" title="Show/Hide" class="bg-blue-500 hover:bg-blue-400 px-3 rounded-lg text-sm transition cursor-pointer">👁</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <!-- LEFT: Setup + Answer Key -->
+        <div class="space-y-6">
+
+            <!-- Step 1 -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center">
+                    <span class="step-badge">১</span>
+                    <h2 class="text-base font-semibold text-gray-800">পরীক্ষার তথ্য</h2>
+                </div>
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">পরীক্ষার বিষয়</label>
+                        <input type="text" id="subject" value="বাংলা"
+                            class="block w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">পরীক্ষার্থীর সংখ্যা</label>
+                            <input type="number" id="totalStudents" value="3" min="1" max="200"
+                                class="block w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">মোট প্রশ্ন সংখ্যা</label>
+                            <input type="number" id="totalMarks" value="5" min="1" max="100"
+                                class="block w-full p-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-300 outline-none">
+                        </div>
+                    </div>
+                    <button onclick="generateAnswerKeyGrid()"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-lg transition text-sm cursor-pointer">
+                        উত্তর কী গ্রিড তৈরি করুন
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Answer Key -->
+            <div id="answerKeyCard" class="hidden bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div class="flex items-center">
+                        <span class="step-badge">২</span>
+                        <h2 class="text-base font-semibold text-gray-800">সঠিক উত্তর কী</h2>
+                    </div>
+                    <span id="keyProgress" class="text-xs text-gray-400"></span>
+                </div>
+                <div class="p-4">
+                    <div class="max-h-72 overflow-y-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-center text-xs text-gray-500 uppercase tracking-wide">
+                                    <th class="py-2 text-left pl-2">প্রশ্ন</th>
+                                    <th class="py-2">ক</th>
+                                    <th class="py-2">খ</th>
+                                    <th class="py-2">গ</th>
+                                    <th class="py-2">ঘ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="answerKeyTableBody" class="divide-y divide-gray-50"></tbody>
+                        </table>
+                    </div>
+                    <button onclick="saveAnswerKeyAndSetupStudents()"
+                        class="mt-4 w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-4 rounded-lg transition text-sm cursor-pointer">
+                        উত্তর কী সংরক্ষণ করুন ও পরবর্তী ধাপ
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Upload + Results -->
+        <div class="space-y-6">
+
+            <!-- Step 3: Upload -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div class="flex items-center">
+                        <span class="step-badge">৩</span>
+                        <h2 class="text-base font-semibold text-gray-800">OMR উত্তরপত্র আপলোড</h2>
+                    </div>
+                    <span id="uploadProgress" class="text-xs text-gray-400"></span>
+                </div>
+                <div class="p-4">
+                    <div id="uploadPlaceholder" class="text-center py-10 text-gray-400">
+                        <div class="text-4xl mb-2">📋</div>
+                        <p class="text-sm">ধাপ ১ ও ২ সম্পন্ন করুন</p>
+                    </div>
+                    <div id="studentTableArea" class="hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+                                        <th class="px-3 py-2 text-left">#</th>
+                                        <th class="px-3 py-2 text-left">রোল নম্বর</th>
+                                        <th class="px-3 py-2 text-left">OMR ছবি</th>
+                                        <th class="px-3 py-2 text-left">ফলাফল</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="studentTableBody" class="divide-y divide-gray-100"></tbody>
+                            </table>
+                        </div>
+                        <button onclick="calculateMeritList()"
+                            class="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg transition text-sm cursor-pointer">
+                            মেধা তালিকা তৈরি করুন
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 4: Merit List -->
+            <div id="meritListArea" class="hidden bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div class="flex items-center">
+                        <span class="step-badge">৪</span>
+                        <h2 class="text-base font-semibold text-gray-800">মেধা তালিকা</h2>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="downloadCSV()"
+                            class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition cursor-pointer">
+                            CSV ডাউনলোড
+                        </button>
+                        <button onclick="downloadPDF()"
+                            class="text-xs bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg transition cursor-pointer">
+                            PDF ডাউনলোড
+                        </button>
+                    </div>
+                </div>
+                <div id="pdfContent" class="p-4">
+                    <div id="statsRow" class="grid grid-cols-3 gap-3 mb-4"></div>
+                    <p id="pdfSubject" class="text-center font-semibold text-gray-700 mb-3 text-sm"></p>
+                    <table class="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                        <thead class="bg-indigo-50">
+                            <tr class="text-xs text-indigo-700 uppercase tracking-wide text-center">
+                                <th class="px-3 py-2">র‍্যাংক</th>
+                                <th class="px-3 py-2">রোল নম্বর</th>
+                                <th class="px-3 py-2">প্রাপ্ত নম্বর</th>
+                                <th class="px-3 py-2">মোট</th>
+                                <th class="px-3 py-2">%</th>
+                                <th class="px-3 py-2">গ্রেড</th>
+                            </tr>
+                        </thead>
+                        <tbody id="meritTableBody" class="divide-y divide-gray-100 text-center"></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="hidden fixed bottom-5 right-5 max-w-xs bg-gray-800 text-white text-sm px-4 py-3 rounded-xl shadow-xl z-50"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────
+var masterAnswerKey = {};  // { "1": "ক", "2": "খ", ... }
+var studentScores   = {};  // { rowIndex: { roll, score } }
+var totalQ = 0;
+
+// ── Helpers ────────────────────────────────────────────────
+function toast(msg, type) {
+    var el = document.getElementById('toast');
+    var colors = { info: 'bg-gray-800', error: 'bg-red-600', success: 'bg-green-700' };
+    el.className = 'fixed bottom-5 right-5 max-w-xs ' + (colors[type] || colors.info) + ' text-white text-sm px-4 py-3 rounded-xl shadow-xl z-50';
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    clearTimeout(el._t);
+    el._t = setTimeout(function(){ el.classList.add('hidden'); }, 3500);
+}
+
+function toggleApiKey() {
+    var el = document.getElementById('apiKeyInput');
+    el.type = el.type === 'password' ? 'text' : 'password';
+}
+
+function gradeOf(pct) {
+    if (pct >= 80) return { g: 'A+', cls: 'bg-green-100 text-green-700' };
+    if (pct >= 70) return { g: 'A',  cls: 'bg-blue-100 text-blue-700' };
+    if (pct >= 60) return { g: 'B',  cls: 'bg-indigo-100 text-indigo-700' };
+    if (pct >= 50) return { g: 'C',  cls: 'bg-yellow-100 text-yellow-700' };
+    if (pct >= 40) return { g: 'D',  cls: 'bg-orange-100 text-orange-700' };
+    return { g: 'F', cls: 'bg-red-100 text-red-700' };
+}
+
+function toBase64(file) {
+    return new Promise(function(res, rej) {
+        var r = new FileReader();
+        r.onload  = function() { res(r.result.split(',')[1]); };
+        r.onerror = function() { rej(new Error('File read failed')); };
+        r.readAsDataURL(file);
+    });
+}
+
+function updateKeyProgress() {
+    var filled = Object.values(masterAnswerKey).filter(Boolean).length;
+    document.getElementById('keyProgress').textContent = filled + ' / ' + totalQ + ' পূরণ';
+}
+
+function updateUploadProgress() {
+    var done = Object.values(studentScores).filter(function(s){ return s.score !== null && s.score !== undefined; }).length;
+    var total = parseInt(document.getElementById('totalStudents').value) || 0;
+    document.getElementById('uploadProgress').textContent = done + ' / ' + total + ' সম্পন্ন';
+}
+
+// ── Step 1: Generate answer key grid ──────────────────────
+function generateAnswerKeyGrid() {
+    totalQ = parseInt(document.getElementById('totalMarks').value);
+    if (!totalQ || totalQ < 1 || totalQ > 100) {
+        toast('দয়া করে ১–১০০ এর মধ্যে প্রশ্ন সংখ্যা দিন।', 'error');
+        return;
+    }
+
+    masterAnswerKey = {};
+    var tbody = document.getElementById('answerKeyTableBody');
+    tbody.innerHTML = '';
+
+    var OPTIONS = ['ক', 'খ', 'গ', 'ঘ'];
+    for (var i = 1; i <= totalQ; i++) {
+        var tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50';
+        var cells = '<td class="py-2 pl-2 text-sm font-medium text-gray-700">প্র ' + i + '</td>';
+        OPTIONS.forEach(function(opt) {
+            var id = 'q' + i + '_' + opt;
+            cells += '<td class="py-2 text-center">' +
+                '<input type="radio" name="q_' + i + '" id="' + id + '" value="' + opt + '" class="opt-radio">' +
+                '<label for="' + id + '" class="opt-label" onclick="masterAnswerKey[' + i + ']=\'' + opt + '\'; updateKeyProgress();">' + opt + '</label>' +
+                '</td>';
+        });
+        tr.innerHTML = cells;
+        tbody.appendChild(tr);
+    }
+
+    document.getElementById('answerKeyCard').classList.remove('hidden');
+    updateKeyProgress();
+    toast('গ্রিড তৈরি হয়েছে। এখন সঠিক উত্তর নির্বাচন করুন।', 'info');
+}
+
+// ── Step 2: Save answer key & build student table ─────────
+function saveAnswerKeyAndSetupStudents() {
+    // Read selected radios
+    for (var i = 1; i <= totalQ; i++) {
+        var sel = document.querySelector('input[name="q_' + i + '"]:checked');
+        masterAnswerKey[i] = sel ? sel.value : null;
+    }
+
+    var missing = [];
+    for (var q = 1; q <= totalQ; q++) {
+        if (!masterAnswerKey[q]) missing.push(q);
+    }
+    if (missing.length > 0) {
+        toast(missing.length + 'টি প্রশ্নের উত্তর দেওয়া হয়নি! (প্র: ' + missing.slice(0,5).join(', ') + ')', 'error');
+        return;
+    }
+
+    var totalStudents = parseInt(document.getElementById('totalStudents').value);
+    if (!totalStudents || totalStudents < 1) {
+        toast('পরীক্ষার্থীর সংখ্যা সঠিকভাবে দিন।', 'error');
+        return;
+    }
+
+    studentScores = {};
+    var tbody = document.getElementById('studentTableBody');
+    tbody.innerHTML = '';
+
+    for (var i = 1; i <= totalStudents; i++) {
+        studentScores[i] = { roll: String(100 + i), score: null };
+        (function(idx) {
+            var tr = document.createElement('tr');
+            tr.className = 'hover:bg-gray-50';
+            tr.innerHTML =
+                '<td class="px-3 py-2 text-xs text-gray-400">' + idx + '</td>' +
+                '<td class="px-3 py-2"><input type="text" value="' + (100 + idx) + '" id="roll_' + idx + '" ' +
+                    'class="w-20 p-1.5 border border-gray-300 rounded-lg text-center text-sm font-semibold focus:ring-2 focus:ring-blue-300 outline-none"></td>' +
+                '<td class="px-3 py-2">' +
+                    '<label class="cursor-pointer inline-flex items-center gap-1.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg px-3 py-1.5 transition">' +
+                        '<span>📷</span>' +
+                        '<span id="filename_' + idx + '">ছবি নির্বাচন</span>' +
+                        '<input type="file" accept="image/*" class="hidden" onchange="handleOMRUpload(this,' + idx + ')">' +
+                    '</label>' +
+                '</td>' +
+                '<td class="px-3 py-2 text-sm" id="score_display_' + idx + '">' +
+                    '<span class="text-gray-400 text-xs">অপেক্ষায়</span>' +
+                '</td>';
+            tbody.appendChild(tr);
+
+            // Sync roll on change
+            document.getElementById('roll_' + idx).addEventListener('input', function() {
+                studentScores[idx].roll = this.value;
+            });
+        })(i);
+    }
+
+    document.getElementById('uploadPlaceholder').classList.add('hidden');
+    document.getElementById('studentTableArea').classList.remove('hidden');
+    document.getElementById('meritListArea').classList.add('hidden');
+    updateUploadProgress();
+    toast('টেবিল তৈরি হয়েছে। এবার ছবি আপলোড করুন।', 'success');
+}
+
+// ── Step 3: Upload handler ─────────────────────────────────
+async function handleOMRUpload(input, rowIndex) {
+    var apiKey = document.getElementById('apiKeyInput').value.trim();
+    if (!apiKey) {
+        toast('দয়া করে Gemini API Key দিন!', 'error');
+        input.value = '';
+        return;
+    }
+
+    var file = input.files[0];
+    if (!file) return;
+
+    var nameEl = document.getElementById('filename_' + rowIndex);
+    if (nameEl) nameEl.textContent = file.name.length > 14 ? file.name.slice(0,14) + '…' : file.name;
+
+    var display = document.getElementById('score_display_' + rowIndex);
+    display.innerHTML = '<span class="text-blue-600 text-xs scanning-anim">🤖 AI পড়ছে…</span>';
+
+    try {
+        var b64 = await toBase64(file);
+        var answers = await callGeminiVision(apiKey, b64, file.type, totalQ);
+        var score = computeScore(answers);
+
+        studentScores[rowIndex].score = score;
+
+        var pct = Math.round((score / totalQ) * 100);
+        var gradeInfo = gradeOf(pct);
+
+        display.innerHTML =
+            '<div class="flex items-center gap-2 flex-wrap">' +
+            '<span class="font-bold text-green-700">' + score + ' / ' + totalQ + '</span>' +
+            '<span class="text-xs ' + gradeInfo.cls + ' px-2 py-0.5 rounded-full font-semibold">' + gradeInfo.g + '</span>' +
+            '</div>';
+
+        updateUploadProgress();
+        toast('রোল ' + studentScores[rowIndex].roll + ': ' + score + '/' + totalQ + ' — সফল!', 'success');
+
+    } catch (err) {
+        console.error(err);
+        display.innerHTML = '<span class="text-red-500 text-xs" title="' + (err.message||'') + '">❌ ব্যর্থ — পুনরায় চেষ্টা করুন</span>';
+        toast('স্ক্যান ব্যর্থ: ' + (err.message || 'অজানা ত্রুটি'), 'error');
+    }
+}
+
+// ── Bengali digit → Arabic digit converter ────────────────
+function bnToArabic(str) {
+    // Converts Bengali numerals ০১২৩৪৫৬৭৮৯ → 0123456789
+    return String(str).replace(/[০-৯]/g, function(d) {
+        return '০১২৩৪৫৬৭৮৯'.indexOf(d);
+    });
+}
+
+// ── Normalize answer value from Gemini ───────────────────
+// Gemini may return: "ক", "ka", "a", "A", "(ক)", "ক)", "1" etc.
+function normalizeAnswer(val) {
+    if (!val) return '';
+    var v = String(val).trim();
+
+    // Direct Bengali match
+    if ('ক খ গ ঘ'.indexOf(v) !== -1 && v.length === 1) return v; // 'ক'/'খ'/'গ'/'ঘ' as-is (handles multi-byte correctly)
+
+    // Strip surrounding brackets/punctuation: (ক) → ক, ক) → ক
+    v = v.replace(/[()।\.]/g, '').trim();
+    if (['ক','খ','গ','ঘ'].indexOf(v) !== -1) return v;
+
+    // Latin letter / number mapping (a→ক, b→খ etc.)
+    var map = {
+        'a':'ক','b':'খ','c':'গ','d':'ঘ',
+        'A':'ক','B':'খ','C':'গ','D':'ঘ',
+        '1':'ক','2':'খ','3':'গ','4':'ঘ',
+        'i':'ক','ii':'খ','iii':'গ','iv':'ঘ'
+    };
+    if (map[v]) return map[v];
+
+    return '';
+}
+
+// ── Gemini Vision API call ────────────────────────────────
+async function callGeminiVision(apiKey, b64, mimeType, questionCount) {
+
+    // Build explicit example so Gemini understands the exact format
+    var exampleEnd = Math.min(4, questionCount);
+    var exArr = [];
+    for (var ex = 1; ex <= exampleEnd; ex++) exArr.push('"' + ex + '":"ক"');
+    var example = '{' + exArr.join(',') + ',...,"' + questionCount + '":"ঘ"}';
+
+    var prompt =
+        'You are an OMR sheet reader. This image contains an MCQ answer sheet.\n' +
+        'Number of questions: ' + questionCount + '\n' +
+        'Options per question: ক (1st), খ (2nd), গ (3rd), ঘ (4th)\n\n' +
+        'Instructions:\n' +
+        '- Scan each question row from 1 to ' + questionCount + '.\n' +
+        '- Find the darkened/filled/circled bubble.\n' +
+        '- Record the Bengali option letter: ক, খ, গ, or ঘ.\n\n' +
+        'OUTPUT RULES — follow exactly:\n' +
+        '1. Return ONLY a single JSON object, nothing else.\n' +
+        '2. Keys must be Arabic numerals as strings: "1", "2", ..., "' + questionCount + '".\n' +
+        '3. Values must be exactly one of: ক খ গ ঘ\n' +
+        '4. If a question bubble is empty or unclear, use empty string "".\n' +
+        '5. NO markdown, NO backticks, NO explanation, NO extra text.\n\n' +
+        'Example format: ' + example;
+
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey;
+
+    var response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            contents: [{
+                parts: [
+                    { inlineData: { mimeType: mimeType || 'image/jpeg', data: b64 } },
+                    { text: prompt }
+                ]
+            }],
+            generationConfig: {
+                temperature: 0,
+                maxOutputTokens: 2048   // ← was 512; 25 questions needs more room
+            }
+        })
+    });
+
+    var data = await response.json();
+
+    if (!response.ok) {
+        var errMsg = (data && data.error && data.error.message) || ('HTTP ' + response.status);
+        if (response.status === 400) throw new Error('API Key ভুল বা Invalid request: ' + errMsg);
+        if (response.status === 403) throw new Error('API Key-এ অনুমতি নেই: ' + errMsg);
+        if (response.status === 429) throw new Error('Rate limit — একটু পরে চেষ্টা করুন');
+        throw new Error(errMsg);
+    }
+
+    var candidate = data && data.candidates && data.candidates[0];
+    if (!candidate) throw new Error('Gemini থেকে কোনো উত্তর আসেনি');
+    if (candidate.finishReason === 'SAFETY') throw new Error('Safety filter — ছবিটি পুনরায় চেষ্টা করুন');
+
+    var rawText = candidate && candidate.content && candidate.content.parts &&
+                  candidate.content.parts[0] && candidate.content.parts[0].text;
+    if (!rawText) throw new Error('Gemini থেকে খালি উত্তর এসেছে');
+
+    // ── Robust cleanup ────────────────────────────────────
+    // 1. Strip markdown fences
+    var cleaned = rawText.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+
+    // 2. Extract the first {...} block (handles trailing explanation text)
+    var jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('JSON পাওয়া যায়নি। AI বললো: ' + cleaned.slice(0, 150));
+
+    // 3. Parse JSON
+    var parsed;
+    try {
+        parsed = JSON.parse(jsonMatch[0]);
+    } catch(e) {
+        // Last-resort: try to salvage by removing trailing incomplete entries
+        var partial = jsonMatch[0].replace(/,\s*"[^"]*"\s*:\s*[^,}\]]*$/, '') + '}';
+        try { parsed = JSON.parse(partial); }
+        catch(e2) { throw new Error('JSON parse ব্যর্থ: ' + jsonMatch[0].slice(0, 100)); }
+    }
+
+    // 4. Normalize keys (Bengali numerals → Arabic) and values
+    var normalized = {};
+    Object.keys(parsed).forEach(function(k) {
+        var arabicKey = bnToArabic(k);          // "১" → "1"
+        var num = parseInt(arabicKey, 10);
+        if (num >= 1 && num <= questionCount) {
+            normalized[num] = normalizeAnswer(parsed[k]);
+        }
+    });
+
+    return normalized;   // { 1: "ক", 2: "খ", ... }
+}
+
+// ── Score computation ──────────────────────────────────────
+function computeScore(studentAnswers) {
+    var score = 0;
+    for (var q = 1; q <= totalQ; q++) {
+        // Accept both numeric key (1) and string key ("1")
+        var given   = (studentAnswers[q] || studentAnswers[String(q)] || '').toString().trim();
+        var correct = (masterAnswerKey[q] || '').toString().trim();
+        if (given && correct && given === correct) score++;
+    }
+    return score;
+}
+
+// ── Step 4: Merit list ─────────────────────────────────────
+function calculateMeritList() {
+    var arr = Object.values(studentScores)
+        .filter(function(s){ return s.score !== null && s.score !== undefined; })
+        .sort(function(a, b){ return b.score - a.score || a.roll.localeCompare(b.roll, 'bn'); });
+
+    if (arr.length === 0) {
+        toast('কোনো খাতা এখনো স্ক্যান হয়নি।', 'error');
+        return;
+    }
+
+    var scores  = arr.map(function(s){ return s.score; });
+    var total   = arr.length;
+    var avg     = (scores.reduce(function(a,b){ return a+b; }, 0) / total).toFixed(1);
+    var highest = Math.max.apply(null, scores);
+
+    document.getElementById('statsRow').innerHTML =
+        '<div class="bg-blue-50 rounded-lg p-3 text-center">' +
+            '<div class="text-xl font-bold text-blue-700">' + total + '</div>' +
+            '<div class="text-xs text-blue-500 mt-1">মূল্যায়িত</div>' +
+        '</div>' +
+        '<div class="bg-green-50 rounded-lg p-3 text-center">' +
+            '<div class="text-xl font-bold text-green-700">' + highest + '</div>' +
+            '<div class="text-xs text-green-500 mt-1">সর্বোচ্চ</div>' +
+        '</div>' +
+        '<div class="bg-indigo-50 rounded-lg p-3 text-center">' +
+            '<div class="text-xl font-bold text-indigo-700">' + avg + '</div>' +
+            '<div class="text-xs text-indigo-500 mt-1">গড় নম্বর</div>' +
+        '</div>';
+
+    var subj = document.getElementById('subject').value || 'পরীক্ষা';
+    document.getElementById('pdfSubject').textContent = 'বিষয়: ' + subj + ' | মোট নম্বর: ' + totalQ;
+
+    var tbody = document.getElementById('meritTableBody');
+    tbody.innerHTML = '';
+    arr.forEach(function(st, i) {
+        var pct = Math.round((st.score / totalQ) * 100);
+        var gradeInfo = gradeOf(pct);
+        var rowCls = i % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+        tbody.innerHTML +=
+            '<tr class="' + rowCls + '">' +
+            '<td class="px-3 py-2 font-bold text-gray-400">' + (i+1) + '</td>' +
+            '<td class="px-3 py-2 font-semibold">' + st.roll + '</td>' +
+            '<td class="px-3 py-2 font-bold text-indigo-700">' + st.score + '</td>' +
+            '<td class="px-3 py-2 text-gray-400">' + totalQ + '</td>' +
+            '<td class="px-3 py-2">' + pct + '%</td>' +
+            '<td class="px-3 py-2"><span class="' + gradeInfo.cls + ' px-2 py-0.5 rounded-full text-xs font-bold">' + gradeInfo.g + '</span></td>' +
+            '</tr>';
+    });
+
+    document.getElementById('meritListArea').classList.remove('hidden');
+    document.getElementById('meritListArea').scrollIntoView({ behavior: 'smooth' });
+    toast('মেধা তালিকা তৈরি হয়েছে!', 'success');
+}
+
+// ── PDF Download (Blob + iframe — no string injection issues) ──
+function downloadPDF() {
+    var arr = Object.values(studentScores)
+        .filter(function(s){ return s.score !== null && s.score !== undefined; })
+        .sort(function(a,b){ return b.score - a.score || a.roll.localeCompare(b.roll); });
+
+    if (arr.length === 0) { toast('কোনো ডেটা নেই।', 'error'); return; }
+
+    var subj    = document.getElementById('subject').value || 'পরীক্ষা';
+    var scores  = arr.map(function(s){ return s.score; });
+    var avg     = (scores.reduce(function(a,b){ return a+b; },0)/scores.length).toFixed(1);
+    var highest = Math.max.apply(null, scores);
+    var lowest  = Math.min.apply(null, scores);
+
+    var gcMap = {'A+':'#15803d','A':'#1d4ed8','B':'#6d28d9','C':'#b45309','D':'#c2410c','F':'#b91c1c'};
+    var gbMap = {'A+':'#dcfce7','A':'#dbeafe','B':'#ede9fe','C':'#fef3c7','D':'#ffedd5','F':'#fee2e2'};
+
+    // Build rows using DOM — zero string-quote issues
+    var doc = document.implementation.createHTMLDocument('print');
+
+    // Inject CSS
+    var style = doc.createElement('style');
+    style.textContent = [
+        'body{margin:0;padding:24px;font-family:Arial,sans-serif;color:#1e293b;',
+        '-webkit-print-color-adjust:exact;print-color-adjust:exact;}',
+        '.hdr{background:linear-gradient(135deg,#1d4ed8,#4f46e5);color:#fff;',
+        'padding:18px 22px;border-radius:10px;margin-bottom:18px;}',
+        '.hdr h1{margin:0;font-size:20px;font-weight:700;}',
+        '.hdr p{margin:5px 0 0;font-size:13px;opacity:.85;}',
+        '.stats{display:flex;gap:10px;margin-bottom:18px;}',
+        '.stat{flex:1;border-radius:8px;padding:12px;text-align:center;}',
+        '.sv{font-size:22px;font-weight:800;}',
+        '.sl{font-size:11px;margin-top:3px;}',
+        'table{width:100%;border-collapse:collapse;border:1px solid #e2e8f0;font-size:13px;}',
+        'thead tr{background:#eef2ff;}',
+        'th{padding:10px 14px;text-align:center;color:#4f46e5;font-size:11px;',
+        'text-transform:uppercase;letter-spacing:.05em;border-bottom:2px solid #c7d2fe;}',
+        'td{padding:9px 14px;text-align:center;border-bottom:1px solid #f1f5f9;}',
+        '.grade{display:inline-block;padding:2px 12px;border-radius:20px;font-weight:700;font-size:12px;}',
+        'footer{text-align:right;font-size:10px;color:#9ca3af;margin-top:14px;}',
+        '@media print{@page{margin:12mm}}'
+    ].join('');
+    doc.head.appendChild(style);
+
+    // Header
+    var hdr = doc.createElement('div');
+    hdr.className = 'hdr';
+    hdr.innerHTML = '<h1>মেধা তালিকা</h1><p>বিষয়: ' + subj + ' | মোট নম্বর: ' + totalQ + '</p>';
+    doc.body.appendChild(hdr);
+
+    // Stats
+    var statsDiv = doc.createElement('div');
+    statsDiv.className = 'stats';
+    var statData = [
+        {val: arr.length, lbl: 'মূল্যায়িত', bg:'#eff6ff', bc:'#bfdbfe', vc:'#1d4ed8', lc:'#3b82f6'},
+        {val: highest,    lbl: 'সর্বোচ্চ',   bg:'#f0fdf4', bc:'#bbf7d0', vc:'#15803d', lc:'#16a34a'},
+        {val: lowest,     lbl: 'সর্বনিম্ন',  bg:'#fef3c7', bc:'#fde68a', vc:'#b45309', lc:'#d97706'},
+        {val: avg,        lbl: 'গড় নম্বর',  bg:'#f5f3ff', bc:'#ddd6fe', vc:'#6d28d9', lc:'#7c3aed'}
+    ];
+    statData.forEach(function(s) {
+        var d = doc.createElement('div');
+        d.className = 'stat';
+        d.style.cssText = 'background:' + s.bg + ';border:1px solid ' + s.bc + ';';
+        d.innerHTML = '<div class="sv" style="color:' + s.vc + ';">' + s.val + '</div>' +
+                      '<div class="sl" style="color:' + s.lc + ';">' + s.lbl + '</div>';
+        statsDiv.appendChild(d);
+    });
+    doc.body.appendChild(statsDiv);
+
+    // Table
+    var table = doc.createElement('table');
+    var thead = doc.createElement('thead');
+    thead.innerHTML = '<tr><th>র‍্যাংক</th><th>রোল নম্বর</th><th>প্রাপ্ত নম্বর</th><th>মোট</th><th>%</th><th>গ্রেড</th></tr>';
+    table.appendChild(thead);
+    var tbody = doc.createElement('tbody');
+    arr.forEach(function(st, i) {
+        var pct   = Math.round((st.score / totalQ) * 100);
+        var gInfo = gradeOf(pct);
+        var tr    = doc.createElement('tr');
+        if (i % 2 !== 0) tr.style.background = '#f8fafc';
+        tr.innerHTML =
+            '<td style="color:#9ca3af;font-weight:600;">' + (i+1) + '</td>' +
+            '<td style="font-weight:700;color:#111827;">' + st.roll + '</td>' +
+            '<td style="font-size:16px;font-weight:800;color:#4f46e5;">' + st.score + '</td>' +
+            '<td style="color:#6b7280;">' + totalQ + '</td>' +
+            '<td>' + pct + '%</td>' +
+            '<td><span class="grade" style="background:' + (gbMap[gInfo.g]||'#f3f4f6') + ';color:' + (gcMap[gInfo.g]||'#374151') + ';">' + gInfo.g + '</span></td>';
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    doc.body.appendChild(table);
+
+    // Footer
+    var footer = doc.createElement('footer');
+    footer.textContent = 'Generated by AI-Powered OMR System';
+    doc.body.appendChild(footer);
+
+    // Serialize to Blob and open in iframe for printing
+    var html = '<!DOCTYPE html>' + doc.documentElement.outerHTML;
+    var blob = new Blob([html], {type: 'text/html;charset=utf-8'});
+    var blobURL = URL.createObjectURL(blob);
+
+    // Remove old iframe if exists
+    var old = document.getElementById('printFrame');
+    if (old) old.remove();
+
+    var iframe = document.createElement('iframe');
+    iframe.id = 'printFrame';
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:0;';
+    iframe.src = blobURL;
+    document.body.appendChild(iframe);
+
+    iframe.onload = function() {
+        setTimeout(function() {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            setTimeout(function(){ URL.revokeObjectURL(blobURL); }, 5000);
+        }, 300);
+    };
+
+    toast('Print dialog খুলছে — Destination: Save as PDF বেছে নিন।', 'success');
+}
+
+function downloadCSV() {
+    var arr = Object.values(studentScores)
+        .filter(function(s){ return s.score !== null && s.score !== undefined; })
+        .sort(function(a,b){ return b.score - a.score; });
+
+    var subj  = document.getElementById('subject').value || 'পরীক্ষা';
+    var lines = ['\uFEFFরোল নম্বর,প্রাপ্ত নম্বর,মোট নম্বর,শতকরা,গ্রেড'];
+    arr.forEach(function(s) {
+        var pct = Math.round((s.score / totalQ) * 100);
+        var gradeInfo = gradeOf(pct);
+        lines.push(s.roll + ',' + s.score + ',' + totalQ + ',' + pct + '%,' + gradeInfo.g);
+    });
+
+    var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href   = url;
+    a.download = 'merit_' + subj + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('CSV ডাউনলোড শুরু হয়েছে।', 'success');
+}
+</script>
+</body>
+</html>
